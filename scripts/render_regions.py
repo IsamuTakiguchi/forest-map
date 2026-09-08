@@ -10,7 +10,7 @@ sys.path.insert(0, __import__('os').path.dirname(__file__))
 src = open(__import__('os').path.join(__import__('os').path.dirname(__file__), 'annotate.py')).read()
 ns = {}; exec(src[src.index('LOTS = ['):src.index('NOT_FOUND')], ns); LOTS = ns['LOTS']
 NOT_FOUND = {'オ': [2, 5, 11]}
-APPROX = {'ワ1': '図面上端で切れているため一部のみ', 'ワ6': '区画線の判読が不確実なため概略', 'カ2': '区画線の判読が不確実なため概略'}
+APPROX_FIXED = {'ワ1': '図面上端で切れているため北側が不完全'}
 
 doc = pymupdf.open(SRC); p0 = doc[0]
 xref = p0.get_images()[0][0]; pix = pymupdf.Pixmap(doc, xref)
@@ -18,6 +18,19 @@ gray = np.frombuffer(pix.samples, np.uint8).reshape(pix.height, pix.width)
 H, W = gray.shape
 img = np.stack([gray]*3, -1).copy()
 regions = json.load(open('regions.json')); mz = np.load('masks.npz')
+APPROX = dict(APPROX_FIXED)
+for k, r in regions.items():
+    if r.get('manual'): APPROX[k] = '番号周辺の区画線から手動で推定'
+    elif not r.get('ok'): APPROX[k] = '区画線の判読が不確実なため概略'
+# 領域の重なりは小さい区画を優先(大きい区画から小さい区画を除く)
+raw = {}
+for sub,no,*_ in LOTS:
+    key = f'{sub}{no}'
+    raw[key] = np.unpackbits(mz[key])[:H*W].reshape(H,W).astype(bool)
+keys_by_size = sorted(raw, key=lambda k: raw[k].sum())
+for i, small in enumerate(keys_by_size):
+    for big in keys_by_size[i+1:]:
+        if (raw[small] & raw[big]).any(): raw[big] &= ~raw[small]
 
 # 1) 半透明の赤塗り
 overlay = img.copy()
@@ -25,7 +38,9 @@ polys = {}
 k5 = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7,7))
 for sub,no,*_ in LOTS:
     key = f'{sub}{no}'
-    m = np.unpackbits(mz[key])[:H*W].reshape(H,W).astype(np.uint8)
+    m = raw[key].astype(np.uint8)
+    m = cv2.morphologyEx(m, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(5,5)))   # 細い突起を除去
+    m = cv2.morphologyEx(m, cv2.MORPH_CLOSE, cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(11,11)))  # 等高線による細い切れ込みを埋める
     m = cv2.dilate(m, k5)                    # 区画線の太らせ分を戻す
     cs,_ = cv2.findContours(m, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     cs = [c for c in cs if cv2.contourArea(c) > 150]
@@ -78,8 +93,10 @@ for sub in ['ル','オ','ワ','カ']:
     s = f'小班{sub}：' + ', '.join(str(n) for n in groups[sub])
     if sub in NOT_FOUND: s += f'　（※{ "・".join(map(str,NOT_FOUND[sub])) } は図面上に番号の表示を確認できず）'
     d.text((70,y), s, font=f_b, fill=(0,0,0)); y += 46
-d.text((70,y+4), '※印：' + '、'.join(f'{k}は{v}' for k,v in APPROX.items()) + '。', font=f_b, fill=(80,80,80)); y += 46
-d.text((70,y+4), '区画は図面の区画線を画像処理で抽出し森林簿の面積と照合して求めた。等高線と区画線の判別が難しい箇所があるため、境界の細部は原図で確認のこと。', font=f_b, fill=(80,80,80))
+apx = {}
+for k,v in APPROX.items(): apx.setdefault(v, []).append(k)
+d.text((70,y+4), '※印：' + '、'.join(f'{"・".join(ks)}は{v}' for v,ks in apx.items()) + '。', font=f_b, fill=(80,80,80)); y += 46
+d.text((70,y+4), '区画は図面の直線的な区画線（等高線は除外）を画像処理で抽出し、森林簿の面積と照合して求めた。境界の細部は原図で確認のこと。', font=f_b, fill=(80,80,80))
 canvas.save(PNG, dpi=(300,300))
 
 out = pymupdf.open()
