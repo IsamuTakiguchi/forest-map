@@ -28,3 +28,11 @@
   - `森林計画図_重ね合わせ.kmz` : 赤枠付き図面画像をGoogle Earthに重ねるためのGroundOverlay
   - `林班57_区画位置図.html` : ブラウザで開くと地理院地図・航空写真・OSMの上に区画を表示
   - `georef.json` : 変換パラメータ、`位置合わせ確認_*.png` : 地理院地図との重ね合わせ確認画像
+
+## 手書き修正版（現行）
+利用者が赤ペンで修正した図面の写真 `input/森林簿_手書き.jpg` を正として区画を作り直した。
+- `scripts/segment_hand.py` : 写真をSIFT特徴点で元図面に位置合わせ（`hand_to_map_homography.npy`）し、赤インクをHSVで抽出。
+  赤線（＋林道の太線）を境界として各番号の周囲から塗りつぶし、区画を求める。補正は `segment_hand_config.json`
+  （seeds: 種点、manual: 手動区画、red_only: 赤線のみを境界にする区画、barriers: 補助線）。
+- 以降の `render_regions.py`・`georef_export.py` は共通。現在の `output/` はこの手書き版の結果。
+- 森林簿の面積と大きく異なる区画（ル15・ル19・ル20・ワ6・カ1〜カ4）は手書きの赤線どおりとし、凡例に※印で注記。

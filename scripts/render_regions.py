@@ -20,8 +20,8 @@ img = np.stack([gray]*3, -1).copy()
 regions = json.load(open('regions.json')); mz = np.load('masks.npz')
 APPROX = dict(APPROX_FIXED)
 for k, r in regions.items():
-    if r.get('manual'): APPROX[k] = '番号周辺の区画線から手動で推定'
-    elif not r.get('ok'): APPROX[k] = '区画線の判読が不確実なため概略'
+    if r.get('manual'): APPROX[k] = '手書き図から手動で区画を指定'
+    elif not r.get('ok'): APPROX[k] = '手書き図の赤線どおり（森林簿の面積とは差がある）'
 # 領域の重なりは小さい区画を優先(大きい区画から小さい区画を除く)
 raw = {}
 for sub,no,*_ in LOTS:
@@ -79,13 +79,13 @@ for sub,no,x0,y0,x1,y1,side in LOTS:
     tag(key + ('※' if key in APPROX else ''), (x0,y0,x1,y1), side, f_tag)
 
 # 凡例
-LEG_H = 400
+LEG_H = 460
 canvas = Image.new('RGB', (W, H+LEG_H), (255,255,255)); canvas.paste(pil, (0,0))
 d = ImageDraw.Draw(canvas); d.line([(0,H),(W,H)], fill=RED, width=4)
 f_h = ImageFont.truetype(FONT, 44); f_b = ImageFont.truetype(FONT, 36)
 y = H+18
 d.rectangle([60,y+4,120,y+44], fill=(255,215,215), outline=RED, width=5)
-d.text((140,y), '赤枠（薄赤塗り）＝ 森林簿(2〜4頁)に記載された施業番号(林班57)の区画の範囲。「ル9」等のタグは 小班名＋施業番号。', font=f_h, fill=RED)
+d.text((140,y), '赤枠（薄赤塗り）＝ 手書き修正図の赤線に基づく、森林簿(2〜4頁)記載の施業番号(林班57)の区画。「ル9」等のタグは 小班名＋施業番号。', font=f_h, fill=RED)
 y += 66
 groups = {}
 for sub,no,*_ in LOTS: groups.setdefault(sub, []).append(no)
@@ -95,8 +95,10 @@ for sub in ['ル','オ','ワ','カ']:
     d.text((70,y), s, font=f_b, fill=(0,0,0)); y += 46
 apx = {}
 for k,v in APPROX.items(): apx.setdefault(v, []).append(k)
-d.text((70,y+4), '※印：' + '、'.join(f'{"・".join(ks)}は{v}' for v,ks in apx.items()) + '。', font=f_b, fill=(80,80,80)); y += 46
-d.text((70,y+4), '区画は図面の直線的な区画線（等高線は除外）を画像処理で抽出し、森林簿の面積と照合して求めた。境界の細部は原図で確認のこと。', font=f_b, fill=(80,80,80))
+import textwrap
+for line in textwrap.wrap('※印：' + '、'.join(f'{"・".join(ks)}は{v}' for v,ks in apx.items()) + '。', 95):
+    d.text((70,y+4), line, font=f_b, fill=(80,80,80)); y += 46
+d.text((70,y+4), '区画は手書き修正図の赤線を写真から抽出して元図面に位置合わせし、赤線で囲まれた範囲として求めた。境界の細部は手書き図で確認のこと。', font=f_b, fill=(80,80,80))
 canvas.save(PNG, dpi=(300,300))
 
 out = pymupdf.open()
